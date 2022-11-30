@@ -202,7 +202,7 @@ class PathIntegralSampler:
         model = eqx.apply_updates(model, updates)
         return loss, model, opt_state
 
-    def drift_sampling(
+    def get_drift_sampling(
         self, t: Array, x: Array, model: Callable[[Array, Array], Array]
     ) -> Array:
         """
@@ -216,7 +216,7 @@ class PathIntegralSampler:
         u = model(t, x[:-1])
         return jnp.append(u, 0.5 * (u**2).sum())
 
-    def diffusion_sampling(
+    def get_diffusion_sampling(
         self, t: Array, x: Array, model: Callable[[Array, Array], Array]
     ) -> Array:
         """
@@ -251,8 +251,8 @@ class PathIntegralSampler:
             self.t0, self.t1, self.brownian_motion_tol, (self.x_dim,), key
         )
         terms = dfx.MultiTerm(
-            dfx.ODETerm(self.drift_sampling),
-            dfx.ControlTerm(self.diffusion_sampling, brownian_motion),
+            dfx.ODETerm(self.get_drift_sampling),
+            dfx.ControlTerm(self.get_diffusion_sampling, brownian_motion),
         )
         y1 = dfx.diffeqsolve(
             terms,
