@@ -2,6 +2,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Callable, Tuple
 
+from chex import ArrayTree  # for sphinx
 import diffrax as dfx
 import equinox as eqx
 import jax
@@ -9,14 +10,14 @@ import jax.numpy as jnp
 import numpyro.distributions as dist
 import optax
 from jax.random import PRNGKeyArray, split
-from jaxtyping import Array, PyTree
+from jaxtyping import Array, PyTree  # type: ignore
 
 # Disable host callbacks for errors since it leads to this bug:
 # https://github.com/patrick-kidger/diffrax/pull/104
 for module_name, module in sys.modules.items():
     if module_name.startswith("diffrax"):
         if hasattr(module, "branched_error_if"):
-            module.branched_error_if = lambda *a, **kw: None
+            module.branched_error_if = lambda *a, **kw: None  # type: ignore
 
 
 @dataclass
