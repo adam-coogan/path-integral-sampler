@@ -1,0 +1,13 @@
+chex
+diffrax
+equinox
+furo
+jax
+jaxlib
+jaxtyping
+myst-parser
+numpyro
+optax
+Sphinx
+sphinx_autodoc_typehints
+tqdm

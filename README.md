@@ -11,3 +11,13 @@ for the neural networks and [optax](https://github.com/deepmind/optax/) for trai
 Check out the [docs](https://path-integral-sampler.readthedocs.io/en/latest/) badge
 above for more details, or try out the scripts applying the method to some low-dimensional
 problems (runnable on a laptop).
+
+## Installation
+
+Running
+```
+git clone git@github.com:adam-coogan/path-integral-sampler.git
+cd path-integral-sampler
+pip install .
+```
+will install the `pis` package.

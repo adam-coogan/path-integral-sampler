@@ -9,10 +9,11 @@ import matplotlib.pyplot as plt
 import numpyro.distributions as dist
 import optax
 from jax.random import PRNGKey, split
+from tqdm.auto import trange
+
 from pis import PathIntegralSampler
 from pis.nn import ControlNet
 from pis.nn.initializers import lecun_normal
-from tqdm.auto import trange
 
 plt.rcParams["figure.facecolor"] = "w"
 plt.rcParams["text.usetex"] = True

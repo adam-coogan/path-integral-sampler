@@ -25,6 +25,7 @@ release = "0.0.1"
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
+
 def linkcode_resolve(domain, info):
     if domain != "py":
         return None
@@ -32,6 +33,7 @@ def linkcode_resolve(domain, info):
         return None
     filename = info["module"].replace(".", "/")
     return f"https://github.com/adam-coogan/path-integral-sampler/blob/main/src/{filename}.py"
+
 
 extensions = [
     "myst_parser",
