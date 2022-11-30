@@ -1,0 +1,24 @@
+[project]
+name = "pis"
+version = "0.0.1"
+authors = [{name = "Adam Coogan", email = "dr.adam.coogan@gmail.com"}]
+description = "Jax implementation of the Path Integral Sampler."
+readme = "README.md"
+license = { file="LICENSE" }
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+keywords = []
+dependencies = ["chex", "diffrax", "equinox", "jax", "jaxlib", "jaxtyping", "numpyro", "optax"]
+
+[project.urls]
+
+[build-system]
+requires = [
+    "setuptools>=42",
+    "wheel"
+]
+build-backend = "setuptools.build_meta"
