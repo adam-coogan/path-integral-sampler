@@ -6,8 +6,8 @@ import jax.numpy as jnp
 from jax.random import PRNGKeyArray, split
 from jaxtyping import Array  # type: ignore
 
-from .composed import MLP
-from .initializers import default_uniform_init
+# from .composed import MLP
+from .init import apply_linear_init, default_uniform_init
 from .positional_encoding import PositionalEncoding
 
 
@@ -41,53 +41,66 @@ class ControlNet(eqx.Module):
         output_scaling: Array = jnp.array(0.03),
         scalar_coeff_net: bool = True,
         activation: Callable[[Array], Array] = jax.nn.relu,
-        init_fn: Callable[
-            [PRNGKeyArray, int, int, Tuple[int, ...]], Array
-        ] = default_uniform_init,
+        weight_init=default_uniform_init,
+        bias_init=default_uniform_init,
     ):
         super().__init__()
         self.get_score = get_score
         self.T = T
         self.output_scaling = output_scaling
 
-        key_t, key_const, key_coeff = split(key, 3)
+        # Build layers
+        key_t, key_x, key_const, key_coeff = split(key, 4)
         self.t_pos_encoding = PositionalEncoding(L_max)
-        self.t_embedding_net = MLP(
+        self.t_embedding_net = eqx.nn.MLP(
             2 * L_max,
             emb_dim,
             embed_width_size,
             embed_depth,
             activation=activation,
-            init_fn=init_fn,
             key=key_t,
         )
-        self.x_embedding_net = MLP(
+        self.x_embedding_net = eqx.nn.MLP(
             x_dim,
             emb_dim,
             embed_width_size,
             embed_depth,
-            init_fn=init_fn,
             activation=activation,
-            key=key_t,
+            key=key_x,
         )
-        self.const_net = MLP(
+        self.const_net = eqx.nn.MLP(
             emb_dim,
             x_dim,
             width_size,
             depth,
             activation=activation,
-            init_fn=init_fn,
             key=key_const,
         )
+        self.const_net = apply_linear_init(
+            key_const, weight_init, bias_init, self.const_net
+        )
         coeff_net_out_size = 1 if scalar_coeff_net else x_dim
-        self.coeff_net = MLP(
+        self.coeff_net = eqx.nn.MLP(
             emb_dim,
             coeff_net_out_size,
             width_size,
             depth,
-            init_fn=init_fn,
             activation=activation,
             key=key_coeff,
+        )
+
+        # Reinitialize weights
+        self.t_embedding_net = apply_linear_init(
+            key_t, weight_init, bias_init, self.t_embedding_net
+        )
+        self.x_embedding_net = apply_linear_init(
+            key_x, weight_init, bias_init, self.x_embedding_net
+        )
+        self.const_net = apply_linear_init(
+            key_const, weight_init, bias_init, self.const_net
+        )
+        self.coeff_net = apply_linear_init(
+            key_coeff, weight_init, bias_init, self.coeff_net
         )
 
     def __call__(self, t: Array, x: Array) -> Array:
