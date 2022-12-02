@@ -2,13 +2,10 @@ import sys
 from dataclasses import dataclass, field
 from typing import Callable, Tuple
 
-from chex import ArrayTree  # for sphinx
 import diffrax as dfx
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpyro.distributions as dist
-import optax
 from jax.random import PRNGKeyArray, split
 from jaxtyping import Array, PyTree  # type: ignore
 
@@ -18,6 +15,10 @@ for module_name, module in sys.modules.items():
     if module_name.startswith("diffrax"):
         if hasattr(module, "branched_error_if"):
             module.branched_error_if = lambda *a, **kw: None  # type: ignore
+
+# TODO:
+# - Refactor so key is always first
+# - Factor training out of this class!
 
 
 @dataclass
@@ -88,7 +89,7 @@ class PathIntegralSampler:
         return jnp.append(jnp.ones(self.x_dim), jnp.zeros(1))
 
     def get_x_T_cost_trajectory(
-        self, model: Callable[[Array, Array], Array], key: PRNGKeyArray
+        self, model: PyTree, key: PRNGKeyArray
     ) -> Tuple[Array, Array]:
         """
         Gets the terminal sample and cost along the trajectory for the given model.
@@ -125,7 +126,7 @@ class PathIntegralSampler:
 
     def _get_loss_1(
         self,
-        model: Callable[[Array, Array], Array],
+        model: PyTree,
         key: PRNGKeyArray,
         get_log_mu: Callable[[Array], Array],
     ):
@@ -167,40 +168,7 @@ class PathIntegralSampler:
         """
         keys = jnp.stack(split(key, batch_size))  # type: ignore
         in_axes = (None, 0, None)
-        return jax.vmap(self._get_loss_1, in_axes)(model, keys, get_log_mu).mean()
-
-    def train_step(
-        self,
-        model: PyTree,
-        key: PRNGKeyArray,
-        get_log_mu: Callable[[Array], Array],
-        batch_size: int,
-        opt_state: optax.OptState,
-        optim: optax.GradientTransformation,
-    ) -> Tuple[Array, PyTree, optax.OptState]:
-        """
-        Training step function. Should be wrapped in filter_jit.
-
-        Args:
-            model: control policy network taking `t` and `x` as arguments.
-            key: PRNG key for the trajectory.
-            get_log_mu: function returning (potentially unnormalized) terminal log
-                probability.
-            batch_size: number of trajectories to sample in the batch.
-            opt_state: current optimizer state.
-            optim: optimizer.
-
-        Returns:
-            loss: batch loss.
-            model: updated model after taking an optimizer step.
-            opt_state: new optimizer state.
-        """
-        loss, grads = eqx.filter_value_and_grad(self.get_loss)(
-            model, key, get_log_mu, batch_size
-        )
-        updates, opt_state = optim.update(grads, opt_state)
-        model = eqx.apply_updates(model, updates)
-        return loss, model, opt_state
+        return jax.vmap(self._get_loss_1, in_axes)(model, keys, get_log_mu).sum()
 
     def get_drift_sampling(
         self, t: Array, x: Array, model: Callable[[Array, Array], Array]

@@ -9,11 +9,10 @@ import matplotlib.pyplot as plt
 import numpyro.distributions as dist
 import optax
 from jax.random import PRNGKey, split
-from tqdm.auto import trange
-
 from pis import PathIntegralSampler
 from pis.nn import ControlNet
-from pis.nn.initializers import lecun_normal
+from pis.nn.init import lecun_init, zeros_init
+from tqdm.auto import trange
 
 plt.rcParams["figure.facecolor"] = "w"
 plt.rcParams["text.usetex"] = True
@@ -113,23 +112,31 @@ if __name__ == "__main__":
         64,
         3,
         activation=jax.nn.selu,
-        init_fn=lecun_normal,
+        weight_init=lecun_init,
+        bias_init=zeros_init,
         T=t1,
     )
-
-    print("training")
     lr = 2e-3
     optim = optax.adam(lr)
     opt_state = optim.init(eqx.filter(model, eqx.is_inexact_array))  # type: ignore
     batch_size = 128
+
+    @eqx.filter_jit
+    def train_step(model, key, opt_state):
+        loss, grads = eqx.filter_value_and_grad(pis.get_loss)(
+            model, key, get_log_mu, batch_size
+        )
+        updates, opt_state = optim.update(grads, opt_state)
+        model = eqx.apply_updates(model, updates)
+        return loss, model, opt_state
+
     n_steps = 200
     losses = []
+    print("training")
     with trange(n_steps) as pbar:
         for _ in pbar:
             key, subkey = split(key)
-            loss, model, opt_state = eqx.filter_jit(pis.train_step)(
-                model, subkey, get_log_mu, batch_size, opt_state, optim
-            )
+            loss, model, opt_state = train_step(model, subkey, opt_state)
             if jnp.isnan(loss):
                 raise ValueError("hit nan loss")
             losses.append(loss.item())

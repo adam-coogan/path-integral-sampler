@@ -9,10 +9,9 @@ import matplotlib.pyplot as plt
 import numpyro.distributions as dist
 import optax
 from jax.random import PRNGKey, split
-from tqdm.auto import trange
-
 from pis import PathIntegralSampler
 from pis.nn import ControlNet
+from tqdm.auto import trange
 
 plt.rcParams["figure.facecolor"] = "w"
 plt.rcParams["text.usetex"] = True
@@ -64,8 +63,10 @@ def plot(losses, xs, log_ws):
     return fig
 
 
+get_score_mu = jax.grad(get_log_mu)
+
 if __name__ == "__main__":
-    get_score_mu = jax.grad(get_log_mu)
+    key = PRNGKey(86)
 
     # Set up sampler
     t0 = 0.0
@@ -73,25 +74,30 @@ if __name__ == "__main__":
     dt0 = 0.05
     pis = PathIntegralSampler(X_DIM, t1, dt0)
 
-    key = PRNGKey(86)
-
     # Construct the network
     key, subkey = split(key)
     model = ControlNet(subkey, X_DIM, get_score_mu, 64, 3, T=t1)
-
     lr = 1e-3
     optim = optax.adam(lr)
     opt_state = optim.init(eqx.filter(model, eqx.is_inexact_array))  # type: ignore
     batch_size = 256
+
+    @eqx.filter_jit
+    def train_step(model, key, opt_state):
+        loss, grads = eqx.filter_value_and_grad(pis.get_loss)(
+            model, key, get_log_mu, batch_size
+        )
+        updates, opt_state = optim.update(grads, opt_state)
+        model = eqx.apply_updates(model, updates)
+        return loss, model, opt_state
+
     n_steps = 500
     losses = []
     print("training")
     with trange(n_steps) as pbar:
         for _ in pbar:
             key, subkey = split(key)
-            loss, model, opt_state = eqx.filter_jit(pis.train_step)(
-                model, subkey, get_log_mu, batch_size, opt_state, optim
-            )
+            loss, model, opt_state = train_step(model, subkey, opt_state)
             losses.append(loss.item())
             pbar.set_postfix(loss=losses[-1])
 
