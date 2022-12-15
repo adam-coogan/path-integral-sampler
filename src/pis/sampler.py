@@ -3,10 +3,9 @@ from dataclasses import dataclass, field
 from typing import Callable, Tuple
 
 import diffrax as dfx
-import jax
 import jax.numpy as jnp
 import numpyro.distributions as dist
-from jax.random import PRNGKeyArray, split
+from jax.random import PRNGKeyArray
 from jaxtyping import Array, PyTree  # type: ignore
 
 # Disable host callbacks for errors since it leads to this bug:
@@ -15,10 +14,6 @@ for module_name, module in sys.modules.items():
     if module_name.startswith("diffrax"):
         if hasattr(module, "branched_error_if"):
             module.branched_error_if = lambda *a, **kw: None  # type: ignore
-
-# TODO:
-# - Refactor so key is always first
-# - Factor training out of this class!
 
 
 @dataclass
@@ -124,7 +119,7 @@ class PathIntegralSampler:
         cost_trajectory = y1[-1]
         return x_T, cost_trajectory
 
-    def _get_loss_1(
+    def get_loss(
         self,
         model: PyTree,
         key: PRNGKeyArray,
@@ -148,27 +143,6 @@ class PathIntegralSampler:
         cost_terminal = self.get_log_mu_0(x_T) - get_log_mu(x_T)
         cost = cost_trajectory + cost_terminal
         return cost
-
-    def get_loss(
-        self,
-        model: PyTree,
-        key: PRNGKeyArray,
-        get_log_mu: Callable[[Array], Array],
-        batch_size: int,
-    ):
-        """
-        Gets loss for a batch of trajectories.
-
-        Args:
-            model: control policy network taking `t` and `x` as arguments.
-            key: PRNG key for the trajectory.
-            get_log_mu: function returning (potentially unnormalized) terminal log
-                probability.
-            batch_size: number of trajectories to sample in the batch.
-        """
-        keys = jnp.stack(split(key, batch_size))  # type: ignore
-        in_axes = (None, 0, None)
-        return jax.vmap(self._get_loss_1, in_axes)(model, keys, get_log_mu).sum()
 
     def get_drift_sampling(
         self, t: Array, x: Array, model: Callable[[Array, Array], Array]

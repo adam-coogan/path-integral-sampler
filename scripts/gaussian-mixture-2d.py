@@ -2,6 +2,8 @@ from jax.config import config  # type: ignore
 
 config.update("jax_debug_nans", True)
 
+from warnings import filterwarnings
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -14,6 +16,7 @@ from pis.nn import ControlNet
 from pis.nn.init import lecun_init, zeros_init
 from tqdm.auto import trange
 
+filterwarnings("ignore", module="diffrax.integrate", category=FutureWarning)
 plt.rcParams["figure.facecolor"] = "w"
 plt.rcParams["text.usetex"] = True
 
@@ -98,8 +101,8 @@ if __name__ == "__main__":
 
     # Set up sampler
     t0 = 0.0
-    t1 = 5.0
-    n_ts = 100
+    t1 = 25.0
+    n_ts = 400
     dt0 = (t1 - t0) / n_ts
     pis = PathIntegralSampler(X_DIM, t1, dt0)
 
@@ -119,16 +122,17 @@ if __name__ == "__main__":
     lr = 2e-3
     optim = optax.adam(lr)
     opt_state = optim.init(eqx.filter(model, eqx.is_inexact_array))  # type: ignore
-    batch_size = 128
+    batch_size = 16
+    loss_fn = lambda model, key: jax.vmap(pis.get_loss, (None, 0, None))(
+        model, key, get_log_mu
+    ).sum()
 
     @eqx.filter_jit
-    def train_step(model, key, opt_state):
-        loss, grads = eqx.filter_value_and_grad(pis.get_loss)(
-            model, key, get_log_mu, batch_size
-        )
+    def train_step(model, opt_state, key, batch_size):
+        loss, grads = eqx.filter_value_and_grad(loss_fn)(model, split(key, batch_size))
         updates, opt_state = optim.update(grads, opt_state)
         model = eqx.apply_updates(model, updates)
-        return loss, model, opt_state
+        return model, opt_state, loss
 
     n_steps = 200
     losses = []
@@ -136,7 +140,7 @@ if __name__ == "__main__":
     with trange(n_steps) as pbar:
         for _ in pbar:
             key, subkey = split(key)
-            loss, model, opt_state = train_step(model, subkey, opt_state)
+            model, opt_state, loss = train_step(model, opt_state, subkey, batch_size)
             if jnp.isnan(loss):
                 raise ValueError("hit nan loss")
             losses.append(loss.item())
@@ -144,7 +148,7 @@ if __name__ == "__main__":
 
     losses = jnp.array(losses)
 
-    n_samples = 20000
+    n_samples = 20_000
     print(f"drawing {n_samples} samples")
     key, subkey = split(key)
     xs, log_ws = sample(subkey, pis, model, n_samples)
