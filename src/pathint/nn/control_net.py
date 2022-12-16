@@ -19,19 +19,19 @@ class ControlNet(eqx.Module):
     with the output initialized to zero using an overall learn multiplicative factor.
     """
 
+    get_score_mu: Callable[[Array], Array] = eqx.static_field()
+    T: float = eqx.static_field()
     t_pos_encoding: Callable
     t_emb: Callable
     x_emb: Callable
     const_net: Callable
     coeff_net: Callable
-    get_score_mu: Callable[[Array], Array] = eqx.static_field()
-    T: float = eqx.static_field()
     output_scaling: Array
 
     def __init__(
         self,
         x_dim: int,
-        get_score: Callable[[Array], Array],
+        get_score_mu: Callable[[Array], Array],
         T: float = 1.0,
         L_max: int = 32,
         emb_dim: int = 64,
@@ -50,7 +50,7 @@ class ControlNet(eqx.Module):
         """
         Args:
             x_dim: size of :math:`x` vector.
-            get_score: score of the target density, :math:`\\nabla \\log \\mu(x)`.
+            get_score_mu: score of the target density, :math:`\\nabla \\log \\mu(x)`.
             T: duration of diffusion.
             L_max: :math:`L` parameter for positional encoding of :math:`t`.
             emb_dim: dimension for embedding of :math:`t` and :math:`x`.
@@ -69,7 +69,7 @@ class ControlNet(eqx.Module):
             key: PRNG key for initializing layers.
         """
         super().__init__()
-        self.get_score_mu = get_score
+        self.get_score_mu = get_score_mu
         self.T = T
         self.output_scaling = output_scaling
 
