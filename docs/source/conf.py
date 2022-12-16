@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.abspath(os.path.join("..", "..", "src")))
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = "pis"
+project = "pathint"
 copyright = "2022, Adam Coogan"
 author = "Adam Coogan"
 release = "0.0.1"

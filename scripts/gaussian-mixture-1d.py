@@ -11,8 +11,8 @@ import matplotlib.pyplot as plt
 import numpyro.distributions as dist
 import optax
 from jax.random import PRNGKey, split
-from pis import PathIntegralSampler
-from pis.nn import ControlNet
+from pathint import PathIntegralSampler
+from pathint.nn import ControlNet
 from tqdm.auto import trange
 
 filterwarnings("ignore", module="diffrax.integrate", category=FutureWarning)
@@ -27,10 +27,10 @@ def get_log_mu(x):
     return jnp.log(jnp.exp(component_dist.log_prob(x)).sum(0)) + jnp.log(0.5)
 
 
-def sample(key, pis, model, n_samples):
+def sample(key, pathint, model, n_samples):
     key, *subkeys = split(key, n_samples + 1)
     subkeys = jnp.stack(subkeys)
-    xs, log_ws = jax.vmap(pis.get_sample, (None, 0))(model, subkeys)
+    xs, log_ws = jax.vmap(pathint.get_sample, (None, 0))(model, subkeys)
     return xs, log_ws
 
 
@@ -75,7 +75,7 @@ if __name__ == "__main__":
     t0 = 0.0
     t1 = 10.0
     dt0 = 0.1
-    pis = PathIntegralSampler(get_log_mu, X_SIZE, t1, dt0)
+    pathint = PathIntegralSampler(get_log_mu, X_SIZE, t1, dt0)
 
     # Construct the network
     key, subkey = split(key)
@@ -84,7 +84,7 @@ if __name__ == "__main__":
     optim = optax.adam(lr)
     opt_state = optim.init(eqx.filter(model, eqx.is_inexact_array))  # type: ignore
     batch_size = 8
-    loss_fn = lambda model, key: jax.vmap(pis.get_loss, (None, 0))(
+    loss_fn = lambda model, key: jax.vmap(pathint.get_loss, (None, 0))(
         model, key
     ).sum()
 
@@ -110,7 +110,7 @@ if __name__ == "__main__":
     n_samples = 20_000
     print(f"drawing {n_samples} samples")
     key, subkey = split(key)
-    xs, log_ws = sample(subkey, pis, model, n_samples)
+    xs, log_ws = sample(subkey, pathint, model, n_samples)
 
     print("plotting")
     fig = plot(losses, xs, log_ws)

@@ -1,7 +1,7 @@
 # API
 
 ```{eval-rst}
-.. autoclass:: pis.PathIntegralSampler
+.. autoclass:: pathint.PathIntegralSampler
    :members:
    :undoc-members:
    :show-inheritance:

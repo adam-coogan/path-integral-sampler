@@ -1,6 +1,6 @@
-# Welcome to `pis`'s documentation!
+# Welcome to `pathint`'s documentation!
 
-`pis` is a jax implementation of the [path integral sampler](https://arxiv.org/abs/2111.15141),
+`pathint` is a jax implementation of the [path integral sampler](https://arxiv.org/abs/2111.15141),
 a method based on the Schrödinger bridge problem for sampling from (unnormalized)
 probability densities. Behind the scenes it relies on [diffrax](https://github.com/patrick-kidger/diffrax)
 to handle the stochastic differential equations, [equinox](https://github.com/patrick-kidger/equinox)

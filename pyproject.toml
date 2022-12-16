@@ -1,5 +1,5 @@
 [project]
-name = "pis"
+name = "pathint"
 version = "0.0.1"
 authors = [{name = "Adam Coogan", email = "dr.adam.coogan@gmail.com"}]
 description = "Jax implementation of the Path Integral Sampler."
