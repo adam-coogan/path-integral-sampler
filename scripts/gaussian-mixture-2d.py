@@ -24,13 +24,13 @@ plt.rcParams["text.usetex"] = True
 def sample(key, pis, model, n_samples):
     key, *subkeys = split(key, n_samples + 1)
     subkeys = jnp.stack(subkeys)
-    xs, log_ws = jax.vmap(jax.jit(lambda key: pis.get_sample(model, key, get_log_mu)))(
+    xs, log_ws = jax.vmap(jax.jit(lambda key: pis.get_sample(model, key)))(
         subkeys
     )
     return xs, log_ws
 
 
-X_DIM = 2
+X_SIZE = 2
 
 
 def get_log_mu(x):
@@ -104,13 +104,13 @@ if __name__ == "__main__":
     t1 = 25.0
     n_ts = 400
     dt0 = (t1 - t0) / n_ts
-    pis = PathIntegralSampler(X_DIM, t1, dt0)
+    pis = PathIntegralSampler(get_log_mu, X_SIZE, t1, dt0)
 
     # Construct the network
     key, subkey = split(key)
     model = ControlNet(
         subkey,
-        X_DIM,
+        X_SIZE,
         get_score_mu,
         64,
         3,
@@ -123,8 +123,8 @@ if __name__ == "__main__":
     optim = optax.adam(lr)
     opt_state = optim.init(eqx.filter(model, eqx.is_inexact_array))  # type: ignore
     batch_size = 16
-    loss_fn = lambda model, key: jax.vmap(pis.get_loss, (None, 0, None))(
-        model, key, get_log_mu
+    loss_fn = lambda model, key: jax.vmap(pis.get_loss, (None, 0))(
+        model, key
     ).sum()
 
     @eqx.filter_jit
