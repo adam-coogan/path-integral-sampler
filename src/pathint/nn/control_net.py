@@ -14,58 +14,82 @@ from .positional_encoding import PositionalEncoding
 class ControlNet(eqx.Module):
     """
     Affine transformation of score parametrized by two neural networks, using the
-    same architecture as in the path integral sampler paper.
+    architecture close to the one from the `path integral sampler paper <https://arxiv.org/abs/2111.15141>`_.
+    This is of the form :math:`a_\\theta(t, x) + b_\\theta(t, x) \\nabla \\log \\mu(x)`,
+    with the output initialized to zero using an overall learn multiplicative factor.
     """
 
     t_pos_encoding: Callable
-    t_embedding_net: Callable
-    x_embedding_net: Callable
+    t_emb: Callable
+    x_emb: Callable
     const_net: Callable
     coeff_net: Callable
-    get_score: Callable[[Array], Array] = eqx.static_field()
+    get_score_mu: Callable[[Array], Array] = eqx.static_field()
     T: float = eqx.static_field()
     output_scaling: Array
 
     def __init__(
         self,
-        key: PRNGKeyArray,
         x_dim: int,
         get_score: Callable[[Array], Array],
-        width_size: int = 64,
-        depth: int = 3,
-        embed_width_size: int = 64,
-        embed_depth: int = 2,
         T: float = 1.0,
         L_max: int = 32,
         emb_dim: int = 64,
-        output_scaling: Array = jnp.array(0.03),
+        embed_width_size: int = 64,
+        embed_depth: int = 2,
+        width_size: int = 64,
+        depth: int = 3,
+        output_scaling: Array = jnp.array(0.0),
         scalar_coeff_net: bool = True,
-        activation: Callable[[Array], Array] = jax.nn.relu,
+        act: Callable[[Array], Array] = jax.nn.relu,
         weight_init=default_uniform_init,
         bias_init=default_uniform_init,
+        *,
+        key: PRNGKeyArray,
     ):
+        """
+        Args:
+            x_dim: size of :math:`x` vector.
+            get_score: score of the target density, :math:`\\nabla \\log \\mu(x)`.
+            T: duration of diffusion.
+            L_max: :math:`L` parameter for positional encoding of :math:`t`.
+            emb_dim: dimension for embedding of :math:`t` and :math:`x`.
+            embed_width_size: hidden layer dimensionality of embedding networks.
+            embed_depth: depth of embedding networks.
+            width_size: hidden layer dimensionality for MLPs mapping embeddings to
+                :math:`a_\\theta(t, x)` and :math:`b_\\theta(t, x)`.
+            depth: depth of MLPs mapping embeddings to :math:`a_\\theta(t, x)`
+                and :math:`b_\\theta(t, x)`.
+            output_scaling: initial scaling of both networks.
+            scalar_coeff_net: if `True`, :math:`b_\\theta(t, x)` will output a scalar
+                instead of a vector to be multiplied elementwise with :math:`\\nabla \\log \\mu(x)`.
+            act: activation used in all networks.
+            weight_init: function for initializing weights.
+            bias_init: function for initializing biases.
+            key: PRNG key for initializing layers.
+        """
         super().__init__()
-        self.get_score = get_score
+        self.get_score_mu = get_score
         self.T = T
         self.output_scaling = output_scaling
 
         # Build layers
         key_t, key_x, key_const, key_coeff = split(key, 4)
         self.t_pos_encoding = PositionalEncoding(L_max)
-        self.t_embedding_net = eqx.nn.MLP(
+        self.t_emb = eqx.nn.MLP(
             2 * L_max,
             emb_dim,
             embed_width_size,
             embed_depth,
-            activation=activation,
+            activation=act,
             key=key_t,
         )
-        self.x_embedding_net = eqx.nn.MLP(
+        self.x_emb = eqx.nn.MLP(
             x_dim,
             emb_dim,
             embed_width_size,
             embed_depth,
-            activation=activation,
+            activation=act,
             key=key_x,
         )
         self.const_net = eqx.nn.MLP(
@@ -73,7 +97,7 @@ class ControlNet(eqx.Module):
             x_dim,
             width_size,
             depth,
-            activation=activation,
+            activation=act,
             key=key_const,
         )
         self.const_net = apply_linear_init(
@@ -85,16 +109,16 @@ class ControlNet(eqx.Module):
             coeff_net_out_size,
             width_size,
             depth,
-            activation=activation,
+            activation=act,
             key=key_coeff,
         )
 
         # Reinitialize weights
-        self.t_embedding_net = apply_linear_init(
-            key_t, weight_init, bias_init, self.t_embedding_net
+        self.t_emb = apply_linear_init(
+            key_t, weight_init, bias_init, self.t_emb
         )
-        self.x_embedding_net = apply_linear_init(
-            key_x, weight_init, bias_init, self.x_embedding_net
+        self.x_emb = apply_linear_init(
+            key_x, weight_init, bias_init, self.x_emb
         )
         self.const_net = apply_linear_init(
             key_const, weight_init, bias_init, self.const_net
@@ -106,16 +130,16 @@ class ControlNet(eqx.Module):
     def __call__(self, t: Array, x: Array) -> Array:
         t_emb = t / self.T - 0.5
         t_emb = self.t_pos_encoding(t_emb)
-        t_emb = self.t_embedding_net(t_emb)
+        t_emb = self.t_emb(t_emb)
 
         # Normalize to Gaussian sample for uncontrolled process
         x_norm = x / jnp.sqrt(self.T)
-        x_emb = self.x_embedding_net(x_norm)
+        x_emb = self.x_emb(x_norm)
         tx_emb = t_emb + x_emb
 
         const = self.const_net(tx_emb)
         coeff = self.coeff_net(tx_emb)
 
-        score = self.get_score(x)
+        score = self.get_score_mu(x)
 
         return self.output_scaling * (const + coeff * score)

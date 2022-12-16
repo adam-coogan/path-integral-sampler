@@ -24,9 +24,7 @@ plt.rcParams["text.usetex"] = True
 def sample(key, pathint, model, n_samples):
     key, *subkeys = split(key, n_samples + 1)
     subkeys = jnp.stack(subkeys)
-    xs, log_ws = jax.vmap(jax.jit(lambda key: pathint.get_sample(model, key)))(
-        subkeys
-    )
+    xs, log_ws = jax.vmap(jax.jit(lambda key: pathint.get_sample(model, key)))(subkeys)
     return xs, log_ws
 
 
@@ -109,23 +107,19 @@ if __name__ == "__main__":
     # Construct the network
     key, subkey = split(key)
     model = ControlNet(
-        subkey,
         X_SIZE,
         get_score_mu,
-        64,
-        3,
-        activation=jax.nn.selu,
+        t1,
+        act=jax.nn.selu,
         weight_init=lecun_init,
         bias_init=zeros_init,
-        T=t1,
+        key=subkey,
     )
     lr = 2e-3
     optim = optax.adam(lr)
     opt_state = optim.init(eqx.filter(model, eqx.is_inexact_array))  # type: ignore
     batch_size = 16
-    loss_fn = lambda model, key: jax.vmap(pathint.get_loss, (None, 0))(
-        model, key
-    ).sum()
+    loss_fn = lambda model, key: jax.vmap(pathint.get_loss, (None, 0))(model, key).sum()
 
     @eqx.filter_jit
     def train_step(model, opt_state, key, batch_size):

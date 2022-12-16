@@ -79,7 +79,7 @@ if __name__ == "__main__":
 
     # Construct the network
     key, subkey = split(key)
-    model = ControlNet(subkey, X_SIZE, get_score_mu, 64, 3, T=t1)
+    model = ControlNet(X_SIZE, get_score_mu, t1, key=subkey)
     lr = 2e-3
     optim = optax.adam(lr)
     opt_state = optim.init(eqx.filter(model, eqx.is_inexact_array))  # type: ignore
