@@ -19,15 +19,15 @@ for module_name, module in sys.modules.items():
 @dataclass
 class PathIntegralSampler:
     """
-    Class defining loss and sampling functions for the path integral sampler (PIS).
+    Class defining loss and sampling functions for the path integral sampler.
 
-    PIS consists of a training objective and sampling procedure for optimal control
-    of the stochastic process
+    This approach consists of a training objective and sampling procedure for optimal
+    control of the stochastic process
 
     .. math:: \\mathrm{d}\\mathbf{x}_t = \\mathbf{u}_t \\mathrm{d}t + \\mathrm{d}\\mathbf{w}_t ,
 
     where :math:`\\mathbf{w}_t` is a Wiener process. A network trained to find the
-    control policy :math:`\\mathbf{u}_t(t, \\mathbf{x})` such that the PIS loss function
+    control policy :math:`\\mathbf{u}_t(t, \\mathbf{x})` such that the loss function
     is minimized causes the above process to yield samples at time :math:`T` with
     the prespecified distribution :math:`\\mu(\\cdot)`. (Distributions and quantities
     at time :math:`t=T` are often referred to as "terminal".) The procedure also
@@ -73,16 +73,17 @@ class PathIntegralSampler:
         """
         return dist.Normal(scale=jnp.sqrt(self.t1)).log_prob(x).sum()
 
-    def get_drift_train(
+    def get_drift(
         self, t: Array, x: Array, model: Callable[[Array, Array], Array]
     ) -> Array:
         """
-        Gets the drift coefficient for the training SDE.
+        Gets the drift coefficient for augmented SDE.
 
         Args:
             t: time.
-            x: position.
-            model: control policy network taking `t` and `x` as arguments.
+            x: state variable, with `x[:-1]` corresponding to :math:`x_t` and `x[-1]`
+                corresponding to the trajectory's cost (:math:`y_t` in the paper).
+            model: control policy network taking :math:`t` and :math:`x_t` as arguments.
         """
         u = model(t, x[:-1])
         return jnp.append(u, 0.5 * (u**2).sum())
@@ -93,46 +94,11 @@ class PathIntegralSampler:
 
         Args:
             t: time.
-            x: position.
+            x: state variable, with `x[:-1]` corresponding to :math:`x_t` and `x[-1]`
+                corresponding to the trajectory's cost (:math:`y_t` in the paper).
             _: unused argument required by diffrax.
         """
         return jnp.append(jnp.ones(self.x_size), jnp.zeros(1))
-
-    def get_x_T_cost_trajectory(
-        self, model: PyTree, key: PRNGKeyArray
-    ) -> Tuple[Array, Array]:
-        """
-        Gets the terminal sample and cost along the trajectory for the given model.
-
-        Args:
-            model: control policy network taking `t` and `x` as arguments.
-            key: PRNG key for the trajectory.
-
-        Returns:
-            x_T: terminal sample.
-            cost_trajectory: approximation to :math:`\\int_{t_0}^{t_1} \\mathrm{d}t \\frac{1}{2} \\mathbf{u}_t(t, \\mathbf{x}_t ; \\theta)`.
-        """
-        # TODO: custom control term! Don't need last component of the Brownian motion.
-        brownian_motion = dfx.VirtualBrownianTree(
-            0.0, self.t1, self.brownian_motion_tol, (self.x_size + 1,), key
-        )
-        terms = dfx.MultiTerm(
-            dfx.ODETerm(self.get_drift_train),
-            dfx.WeaklyDiagonalControlTerm(self.get_diffusion_train, brownian_motion),
-        )
-        y1 = dfx.diffeqsolve(
-            terms,
-            self.solver,
-            0.0,
-            self.t1,
-            self.dt0,
-            self.y0,
-            args=model,
-            saveat=dfx.SaveAt(t1=True),
-        ).ys[-1]
-        x_T = y1[:-1]
-        cost_trajectory = y1[-1]
-        return x_T, cost_trajectory
 
     def get_loss(self, model: PyTree, key: PRNGKeyArray):
         """
@@ -144,27 +110,17 @@ class PathIntegralSampler:
 
         Returns:
             cost: approximation to :math:`\\int_{t_0}^{t_1} \\mathrm{d}t \\frac{1}{2} \\mathbf{u}_t(t, \\mathbf{x}_t ; \\theta) + \\Psi(\\mathbf{x}_T)`,
-                where the second term is the terminal cost specified by the PIS
-                training procedure.
+                where the second term is the terminal cost specified by the training
+                procedure.
         """
-        x_T, cost_trajectory = self.get_x_T_cost_trajectory(model, key)
-        cost_terminal = self.get_log_mu_0(x_T) - self.get_log_mu(x_T)
-        cost = cost_trajectory + cost_terminal
-        return cost
-
-    def get_drift_sampling(
-        self, t: Array, x: Array, model: Callable[[Array, Array], Array]
-    ) -> Array:
-        """
-        Gets the drift coefficient for sampling.
-
-        Args:
-            t: time.
-            x: position.
-            model: control policy network taking `t` and `x` as arguments.
-        """
-        u = model(t, x[:-1])
-        return jnp.append(u, 0.5 * (u**2).sum())
+        brownian_motion = dfx.VirtualBrownianTree(
+            0.0, self.t1, self.brownian_motion_tol, (self.x_size + 1,), key
+        )
+        terms = dfx.MultiTerm(
+            dfx.ODETerm(self.get_drift),
+            dfx.WeaklyDiagonalControlTerm(self.get_diffusion_train, brownian_motion),
+        )
+        return self._sample_x_cost(terms, model)[1]
 
     def get_diffusion_sampling(
         self, t: Array, x: Array, model: Callable[[Array, Array], Array]
@@ -179,6 +135,29 @@ class PathIntegralSampler:
         """
         u = model(t, x[:-1])
         return jnp.append(jnp.eye(self.x_size), u[None, :], axis=0)
+
+    def _sample_x_cost(self, terms: dfx.MultiTerm, model: PyTree) -> Tuple[Array, Array]:
+        """
+        Helper to get sample and its cost.
+        """
+        # TODO: custom control term! f is the identity stacked on u.
+        y1 = dfx.diffeqsolve(
+            terms,
+            self.solver,
+            0.0,
+            self.t1,
+            self.dt0,
+            self.y0,
+            args=model,
+            saveat=dfx.SaveAt(t1=True),
+        ).ys[-1]
+        # Split up augmented state
+        x_T = y1[:-1]
+        y_T = y1[-1]
+        # Add terminal cost
+        Psi_T = self.get_log_mu_0(x_T) - self.get_log_mu(x_T)
+        cost = y_T + Psi_T
+        return x_T, cost
 
     def get_sample(self, model: PyTree, key: PRNGKeyArray) -> Tuple[Array, Array]:
         """
@@ -197,21 +176,9 @@ class PathIntegralSampler:
             0.0, self.t1, self.brownian_motion_tol, (self.x_size,), key
         )
         terms = dfx.MultiTerm(
-            dfx.ODETerm(self.get_drift_sampling),
+            dfx.ODETerm(self.get_drift),
             dfx.ControlTerm(self.get_diffusion_sampling, brownian_motion),
         )
-        y1 = dfx.diffeqsolve(
-            terms,
-            self.solver,
-            0.0,
-            self.t1,
-            self.dt0,
-            self.y0,
-            args=model,
-            saveat=dfx.SaveAt(t1=True),
-        ).ys[-1]
-        x_T = y1[:-1]
-        cost_trajectory = y1[-1]
-        cost_terminal = self.get_log_mu_0(x_T) - self.get_log_mu(x_T)
-        log_w = -(cost_trajectory + cost_terminal)
+        x_T, cost = self._sample_x_cost(terms, model)
+        log_w = -cost
         return x_T, log_w
