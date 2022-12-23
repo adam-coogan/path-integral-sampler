@@ -15,6 +15,9 @@ keywords = []
 dependencies = ["chex", "diffrax", "equinox", "jax", "jaxlib", "jaxtyping", "numpyro", "optax"]
 
 [project.urls]
+homepage = "https://github.com/adam-coogan/path-integral-sampler"
+repository = "https://github.com/adam-coogan/path-integral-sampler"
+documentation = "https://path-integral-sampler.readthedocs.io/en/latest/"
 
 [build-system]
 requires = [
