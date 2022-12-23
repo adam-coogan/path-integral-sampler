@@ -29,6 +29,9 @@ def zeros_init(
 
 
 def apply_linear_init(key, weight_init, bias_init, model: PyTree):
+    """
+    Reinitializes all linear layers in a model.
+    """
     key_w, key_b = split(key)
 
     # Extract parameters
