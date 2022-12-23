@@ -4,6 +4,7 @@ config.update("jax_debug_nans", True)
 
 from warnings import filterwarnings
 
+import click
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -11,9 +12,12 @@ import matplotlib.pyplot as plt
 import numpyro.distributions as dist
 import optax
 from jax.random import PRNGKey, split
+from jaxtyping import Array  # type: ignore
+from tqdm.auto import trange
+
 from pathint import PathIntegralSampler
 from pathint.nn import ControlNet
-from tqdm.auto import trange
+from pathint.nn.init import lecun_init, zeros_init
 
 filterwarnings("ignore", module="diffrax.integrate", category=FutureWarning)
 plt.rcParams["figure.facecolor"] = "w"
@@ -68,25 +72,28 @@ def plot(losses, xs, log_ws):
 
 get_score_mu = jax.grad(get_log_mu)
 
-if __name__ == "__main__":
-    key = PRNGKey(86)
+
+@click.command()
+@click.option("--seed", default=20, help="PRNG seed")
+@click.option("--n-steps", default=200, help="PRNG seed")
+def main(seed, n_steps):
+    key = PRNGKey(seed)
 
     # Set up sampler
-    t0 = 0.0
     t1 = 10.0
-    dt0 = 0.1
+    dt0 = t1 / 100
     pathint = PathIntegralSampler(get_log_mu, X_SIZE, t1, dt0)
 
     # Construct the network
     key, subkey = split(key)
-    model = ControlNet(X_SIZE, get_score_mu, t1, key=subkey)
-    lr = 2e-3
+    model = ControlNet(X_SIZE, lambda _, x: get_score_mu(x), t1, key=subkey)
+    lr = 3e-4
     optim = optax.adam(lr)
     opt_state = optim.init(eqx.filter(model, eqx.is_inexact_array))  # type: ignore
-    batch_size = 8
+    batch_size = 128
     loss_fn = lambda model, key: jax.vmap(pathint.get_loss, (None, 0))(
         model, key
-    ).sum()
+    ).mean()
 
     @eqx.filter_jit
     def train_step(model, opt_state, key, batch_size):
@@ -95,7 +102,6 @@ if __name__ == "__main__":
         model = eqx.apply_updates(model, updates)
         return model, opt_state, loss
 
-    n_steps = 200
     losses = []
     print("training")
     with trange(n_steps) as pbar:
@@ -107,7 +113,7 @@ if __name__ == "__main__":
 
     losses = jnp.array(losses)
 
-    n_samples = 20_000
+    n_samples = 10_000
     print(f"drawing {n_samples} samples")
     key, subkey = split(key)
     xs, log_ws = sample(subkey, pathint, model, n_samples)
@@ -117,3 +123,7 @@ if __name__ == "__main__":
     fig.savefig("output/gaussian-mixture-1d.png")
 
     print("done!")
+
+
+if __name__ == "__main__":
+    main()
